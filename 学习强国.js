@@ -4,6 +4,12 @@
  * 2. 订阅和发表观点模块未编写
  */
 
+/**
+ * 已知bug：
+ * 1. 每日答题最后会进去点点通
+ * 2. 专项答题完成后会卡住
+ */
+
 auto.waitFor()
 
 // setScreenMetrics(1080, 2340);
@@ -15,6 +21,20 @@ var { delay_time } = hamibot.env;
 var { whether_answer_questions } = hamibot.env;
 var { all_weekly_answers_completed } = hamibot.env;
 var { all_special_answer_completed } = hamibot.env;
+var { distance1, distance2, distance3, width, height } = hamibot.env;
+if (!distance1 && !distance2 && !distance3 && !width && !height) {
+    distance1 = 0.4;
+    distance2 = 2.8;
+    distance3 = 0.4;
+    width = 5.5;
+    height = 10.4;
+} else {
+    distance1 = Number(distance1);
+    distance2 = Number(distance2);
+    distance3 = Number(distance3);
+    width = Number(width);
+    height = Number(height);
+}
 delay_time = Number(delay_time) * 1000;
 // 调用华为api所需参数
 var { username } = hamibot.env;
@@ -37,12 +57,14 @@ function my_click_non_clickable(target) {
 // 模拟点击可点击元素
 function my_click_clickable(target) {
     text(target).waitFor();
+    // 由于部分机型在boundsInside函数上有bug，无法点击，遗弃
     // 防止点到页面中其他有包含“我的”的控件
-    if (target == '我的') {
-        text('我的').boundsInside(device.width * 3/4 , 0, device.width, device.height / 2).findOne().click();
-    } else {
-        click(target);
-    }
+    // if (target == '我的') {
+    //     text('我的').boundsInside(device.width * 3/4 , 0, device.width, device.height / 2).findOne().click();
+    // } else {
+    //     click(target);
+    // }
+    click(target);
 }
 
 // 模拟随机时间
@@ -112,12 +134,17 @@ for (var i = 4; i < 17; i++) {
     if (i == 4) {
         // 已阅读文章次数
         var completed_count = parseInt(model.child(2).text().match(/\d+/)) / 2;
-    }
-    if (i == 5) {
+    } else if (i == 5) {
         var other_model = className('android.view.View').depth(22).findOnce(i + 1);
         // 已观看视频时间
         var completed_time = Math.min(parseInt(model.child(2).text().match(/\d+/)), 
         parseInt(other_model.child(2).text().match(/\d+/))) * 60000;
+    } else if (i == 11) {
+        // 四人赛已得分
+        var four_players_scored = parseInt(model.child(2).text().match(/\d+/));
+    } else if (i == 12) {
+        // 双人对战已得分
+        var two_players_scored = parseInt(model.child(2).text().match(/\d+/));
     }
     finish_list.push(model.child(3).text() == '已完成');
 }
@@ -241,17 +268,24 @@ my_click_clickable('学习积分');
 /**
  * 答题
  * @param {int} depth_option 选项控件的深度
- * @param {string} question 选项控件的深度
+ * @param {string} question 问题
  */
-function do_contest_answer(depth_option, question) {
+ function do_contest_answer(depth_option, question) {
     if (question == "选择正确的读音" || question == "选择词语的正确词形" || question == "下列词形正确的是") {
         // 选择第一个
         className('android.widget.RadioButton').depth(depth_option).findOne().click();
     } else {
         // 发送http请求获取答案
-        var r = http.get('https://www.souwen123.com/search/select.php?age=' + encodeURI(question));
-        var result = r.body.string().match(/答案：./);
-        if (result) {
+        var question1 = question.slice(0, 10);
+        var r1 = http.get('http://www.syiban.com/search/index/init.html?modelid=1&q=' + encodeURI(question1));
+        var r2 = http.get('https://www.souwen123.com/search/select.php?age=' + encodeURI(question));
+        var result1 = r1.body.string().match(/答案：./);
+        var result2 = r2.body.string().match(/答案：./);
+        var result;
+        if (result1 || result2) {
+            if (result2 && -1 < result2[0].charCodeAt(3) - 65 < 4) result = result2;
+            else if (result1 && -1 < result1[0].charCodeAt(3) - 65 < 4) result = result1;
+            else result = result1;
             try {
                 className('android.widget.RadioButton').depth(depth_option).findOnce(result[0].charCodeAt(3) - 65).click();
             } catch (error) {
@@ -262,10 +296,10 @@ function do_contest_answer(depth_option, question) {
         } else {
             // 如果没找到结果则选择第一个
             if (className('android.widget.RadioButton').depth(depth_option).exists())
-            className('android.widget.RadioButton').depth(depth_option).findOne().click();
+                className('android.widget.RadioButton').depth(depth_option).findOne().click();
         }
     }
-}
+  }
 
 /*
 **********挑战答题*********
@@ -299,9 +333,9 @@ if (!finish_list[6]) {
                 break;
             }
             // 题目
-            var question = className('android.view.View').depth(depth_question).findOne().text();
+            var question = className('android.view.View').depth(25).findOne().text();
             // 截取到下划线前
-            question = question.indexOf('.') == -1 ? question.slice(0, question.indexOf(' ')) : question.slice(question.indexOf('.') + 1, question.indexOf(' '));
+            question = question.slice(0, question.indexOf(' '));
             // 截取前20个字符就行
             question = question.slice(0, 20);
             do_contest_answer(28, question);
@@ -418,9 +452,10 @@ function entry_model(number) {
  */
 function restart() {
     // 点击退出
-    className('android.view.View').clickable(true).depth(20).findOne().click();
+    sleep(random_time(delay_time));
+    back();
     my_click_clickable('退出');
-    switch (back_track_flag) {
+    switch (restart_flag) {
         case 0:
             text('登录').waitFor();
             entry_model(7);
@@ -482,8 +517,9 @@ function get_token() {
 var token = get_token();
 
 /**
- * 点击对应的去答题或去看看
+ * 华为ocr接口，传入图片返回文字
  * @param {image} img 传入图片
+ * @returns {string} answer 文字
  */
 function huawei_ocr_api(img) {
     var answer = "";
@@ -584,7 +620,7 @@ function do_periodic_answer(number) {
                 click('确定');
                 sleep(random_time(delay_time)); // 等待提交的时间
                 // 如果错误（ocr识别有误）则重来
-                if (text('下一题').exists() || text('完成').exists()) {
+                if (text('下一题').exists() || (text('完成').exists() && !special_flag)) {
                     restart();
                     break;
                 }
@@ -623,6 +659,7 @@ if (!finish_list[4]) {
     entry_model(8);
     // 等待列表加载
     textContains('月').waitFor();
+    sleep(random_time(delay_time));
     // 打开第一个出现未作答的题目
     // 如果之前的答题全部完成则不向下搜索
     if (all_weekly_answers_completed == 'no') {
@@ -643,21 +680,40 @@ if (!finish_list[4]) {
 /*
 **********四人赛*********
 */
-if (!finish_list[7]) {
+if (!finish_list[7] && four_players_scored < 3) {
     sleep(random_time(delay_time));
     if (!className('android.view.View').depth(21).text('学习积分').exists()) back_track();
+    className('android.view.View').depth(21).text('学习积分').waitFor();
     entry_model(11);
     for (var i = 0; i < 2; i++) {
+        sleep(random_time(delay_time));
         my_click_clickable('开始比赛');
-        // 等待题目加载
-        className('android.view.View').depth(29).waitFor();
+        
         while (!text('继续挑战').exists()) {
-            sleep(random_time(delay_time * 3));
-            var img = images.inRange(captureScreen(), '#000000', '#444444');
+            do {
+                var img = captureScreen();
+                var point = findColor(img, '#1B1F25', {
+                    region: [device.width * distance1 / width, device.height * distance2 / height,
+                       device.width * (1 - 2 * distance1 / width), device.height * (1 - distance2 / height - distance3 / height)],
+                    threshold: 10,
+                });
+            } while (!point);
+            var img = images.inRange(img, '#000000', '#444444');
             var question = huawei_ocr_api(img);
             question = question.slice(question.indexOf('.') + 1);
-            question = question.slice(0, 20);   
-            do_contest_answer(32, question);
+            question = question.slice(0, 20);
+            question = question.replace(/\s*/g,"");
+            question = question.replace(/,/g, "，");
+            className('android.widget.RadioButton').depth(32).waitFor();
+            if (question) do_contest_answer(32, question);
+            do {
+                var img = captureScreen();
+                var point = findColor(img, '#1B1F25', {
+                    region: [device.width * distance1 / width, device.height * distance2 / height,
+                       device.width * (1 - 2 * distance1 / width), device.height * (1 - distance2 / height - distance3 / height)],
+                    threshold: 10,
+                });
+            } while (!point);
         }
         if (i == 0) {
             sleep(random_time(delay_time));
@@ -665,6 +721,7 @@ if (!finish_list[7]) {
             sleep(random_time(delay_time));
         }
     }
+    sleep(random_time(delay_time));
     back();
     sleep(random_time(delay_time));
     back();
@@ -673,24 +730,47 @@ if (!finish_list[7]) {
 /*
 **********双人对战*********
 */
-if (!finish_list[8]) {
+if (!finish_list[8] && two_players_scored < 1) {
     sleep(random_time(delay_time));
     if (!className('android.view.View').depth(21).text('学习积分').exists()) back_track();
+    className('android.view.View').depth(21).text('学习积分').waitFor();
     entry_model(12);
     // 点击随机匹配
     text('随机匹配').waitFor();
     sleep(random_time(delay_time * 2));
     className('android.view.View').clickable(true).depth(24).findOnce(1).click();
-    // 等待题目加载
-    className('android.view.View').depth(29).waitFor();
+
     while (!text('继续挑战').exists()) {
-        sleep(random_time(delay_time * 3));
-        var img = images.inRange(captureScreen(), '#000000', '#444444');
+        do {
+            var img = captureScreen();
+            var point = findColor(img, '#1B1F25', {
+                region: [device.width * distance1 / width, device.height * distance2 / height,
+                   device.width * (1 - 2 * distance1 / width), device.height * (1 - distance2 / height - distance3 / height)],
+                threshold: 10,
+            });
+        } while (!point);
+        var img = images.inRange(img, '#000000', '#444444');
         var question = huawei_ocr_api(img);
+        // 对识别出的题目进行处理
         question = question.slice(question.indexOf('.') + 1);
-        question = question.slice(0, 20);   
-        do_contest_answer(32, question);
+        question = question.replace(/\s*/g,"");
+        question = question.replace(/,/g, "，"); 
+        question = question.slice(0, 20);
+        // 等待选项加载
+        className('android.widget.RadioButton').depth(32).waitFor();
+        if (question) do_contest_answer(32, question);
+        // 等待下一题加载
+        do {
+            var img = captureScreen();
+            var point = findColor(img, '#1B1F25', {
+                region: [device.width * distance1 / width, device.height * distance2 / height,
+                   device.width * (1 - 2 * distance1 / width), device.height * (1 - distance2 / height - distance3 / height)],
+                threshold: 10,
+            });
+        } while (!point);
     }
+    
+    sleep(random_time(delay_time));
     back();
     sleep(random_time(delay_time));
     back();
@@ -700,7 +780,6 @@ if (!finish_list[8]) {
 /*
 **********专项答题*********
 */
-
 if (!finish_list[5]) {
     sleep(random_time(delay_time));
     if (!className('android.view.View').depth(21).text('学习积分').exists()) back_track();
@@ -739,7 +818,7 @@ if (!finish_list[5]) {
         // 等待题目加载
         sleep(random_time(delay_time));
         // 已完成题数
-        var completed_num = parseInt(className('android.view.View').depth(24).findOnce(1).text().slice(0, 1));
+        var completed_num = parseInt(className('android.view.View').depth(24).findOnce(1).text());
         do_periodic_answer(10 - completed_num + 1);
     } else {
         toast('你居然做完了，我很佩服你！！！');
